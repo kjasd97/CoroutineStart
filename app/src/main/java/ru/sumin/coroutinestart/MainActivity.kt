@@ -3,12 +3,15 @@ package ru.sumin.coroutinestart
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.Message
+import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import ru.sumin.coroutinestart.databinding.ActivityMainBinding
-import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity() {
 
@@ -16,54 +19,110 @@ class MainActivity : AppCompatActivity() {
         ActivityMainBinding.inflate(layoutInflater)
     }
 
-
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(binding.root)
         binding.buttonLoad.setOnClickListener {
-            loadData()
-        }
-    }
 
-    private fun loadData() {
-        binding.progress.isVisible = true
-        binding.buttonLoad.isEnabled = false
+            binding.progress.isVisible = true
+            binding.buttonLoad.isEnabled = false
 
-        loadCity {
-            binding.tvLocation.text = it
-            loadTemperature(it) {
-                binding.tvTemperature.text = it.toString()
+            val defCity = lifecycleScope.async {
+                val city = loadCity()
+                binding.tvLocation.text = city
+                city
+            }
+
+            val defTemp = lifecycleScope.async {
+                val temp = loadTemperature()
+                binding.tvTemperature.text = temp.toString()
+                temp
+            }
+
+            lifecycleScope.launch {
+                val city = defCity.await()
+                val temp = defTemp.await()
+                Toast.makeText(
+                    this@MainActivity,
+                    "city $city, tmp $temp",
+                    Toast.LENGTH_SHORT
+                ).show()
                 binding.progress.isVisible = false
                 binding.buttonLoad.isEnabled = true
             }
+//            loadWithoutCoroutine()
         }
     }
 
-    private fun loadCity(methodAfter: (String) -> Unit) {
-        thread {
-            Thread.sleep(5000)
-            runOnUiThread{
-                methodAfter.invoke("Kyiv")
-            }
-        }
+    private suspend fun loadData() {
+        Log.d("MainActivity", "Load started: $this")
+        binding.progress.isVisible = true
+        binding.buttonLoad.isEnabled = false
+        val city = loadCity()
 
+        binding.tvLocation.text = city
+        val temp = loadTemperature()
+
+        binding.tvTemperature.text = temp.toString()
+        binding.progress.isVisible = false
+        binding.buttonLoad.isEnabled = true
+        Log.d("MainActivity", "Load finished: $this")
     }
 
-    private fun loadTemperature(city: String, methodAfter: (Int) -> Unit) {
-        thread {
-            runOnUiThread {
-                Toast.makeText(
-                    this,
-                    getString(R.string.loading_temperature_toast, city),
-                    Toast.LENGTH_SHORT
-                ).show()
+
+    private suspend fun loadCity(): String {
+        delay(2000)
+        return "Kyiv"
+    }
+
+    private suspend fun loadTemperature(): Int {
+        delay(5000)
+        return 17
+    }
+
+    private fun loadWithoutCoroutine(step: Int = 0, obj: Any? = null) {
+        when (step) {
+            0 -> {
+                Log.d("MainActivity", "Load started: $this")
+                binding.progress.isVisible = true
+                binding.buttonLoad.isEnabled = false
+                loadCityWithoutCoroutine {
+                    loadWithoutCoroutine(1, it)
+                }
             }
-            Thread.sleep(5000)
-          runOnUiThread {
-              methodAfter.invoke(17)
-          }
+            1 -> {
+                val city = obj as String
+                binding.tvLocation.text = city
+                loadTemperatureWithoutCoroutine(city) {
+                    loadWithoutCoroutine(2, it)
+                }
+            }
+            2 -> {
+                val temp = obj as Int
+                binding.tvTemperature.text = temp.toString()
+                binding.progress.isVisible = false
+                binding.buttonLoad.isEnabled = true
+                Log.d("MainActivity", "Load finished: $this")
+            }
         }
+    }
+
+    private fun loadTemperatureWithoutCoroutine(city: String, callback: (Int) -> Unit) {
+        Toast.makeText(
+            this,
+            getString(R.string.loading_temperature_toast, city),
+            Toast.LENGTH_SHORT
+        ).show()
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            callback.invoke(17)
+        }, 5000)
+    }
+
+    private fun loadCityWithoutCoroutine(callback: (String) -> Unit) {
+        Handler(Looper.getMainLooper()).postDelayed({
+            callback.invoke("Kyiv")
+        }, 5000)
     }
 
 }
